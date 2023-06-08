@@ -1,0 +1,11 @@
+notebook
+ipykernel
+ploomber_engine
+psutil
+sphinx_inline_tabs
+jupyter-book
+bilby
+lisaorbits
+lisagwresponse
+lisainstrument
+ghp-import

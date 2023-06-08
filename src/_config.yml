@@ -1,0 +1,36 @@
+title: Notes on LISA
+author: Avi Vajpeyi
+
+# Force re-execution of notebooks on each build.
+# See https://jupyterbook.org/content/execute.html
+execute:
+  execute_notebooks: 'off'
+
+# Define the name of the latex output file for PDF builds
+latex:
+  latex_documents:
+    targetname: book.tex
+
+
+repository:
+  url: https://github.com/avivajpeyi/lisa_notes
+  path_to_book: src
+  branch: main
+
+parse:
+  myst_enable_extensions:
+    # don't forget to list any other extensions you want enabled,
+    # including those that are enabled by default!
+    - amsmath
+
+html:
+  use_issues_button: false
+  use_repository_button: false
+
+sphinx:
+  extra_extensions:
+  - sphinx_inline_tabs
+
+launch_buttons:
+  colab_url: "https://colab.research.google.com"
+  binderhub_url: ""
