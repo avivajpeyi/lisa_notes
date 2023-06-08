@@ -4,6 +4,8 @@ __pycache__/
 *$py.class
 
 *.h5
+_build
+
 *.pkl
 *.hdf5
 simulated*
