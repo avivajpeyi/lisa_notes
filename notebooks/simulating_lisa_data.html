@@ -333,9 +333,12 @@ document.write(`
             </div>
             <nav aria-label="Page">
                 <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#acknowledgements">Acknowledgements</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#installation-and-setup">Installation and setup</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#lisa-orbit-generation">LISA Orbit generation</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#gw-response">GW Response</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#lisa-instrument-noise">LISA Instrument noise</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#tdi-observables">TDI observables</a></li>
 </ul>
             </nav>
         </div>
@@ -349,179 +352,384 @@ document.write(`
                   
   <section id="simulating-lisa-data">
 <h1>Simulating LISA data<a class="headerlink" href="#simulating-lisa-data" title="Permalink to this heading">#</a></h1>
+<p>This notebook will walk through how to simulate LISA data using the <code class="docutils literal notranslate"><span class="pre">lisaorbits</span></code>, <code class="docutils literal notranslate"><span class="pre">lisagwresponse</span></code>, <code class="docutils literal notranslate"><span class="pre">lisainstrument</span></code> and <code class="docutils literal notranslate"><span class="pre">pytdi</span></code> packages. These are the main steps:</p>
 <ol class="arabic simple">
 <li><p>Generate LISA’s orbit (<code class="docutils literal notranslate"><span class="pre">lisaorbit</span></code>)</p></li>
 <li><p>Generate GW response (<code class="docutils literal notranslate"><span class="pre">lisagwresponse</span></code>)</p></li>
 <li><p>Generate instrument noise (<code class="docutils literal notranslate"><span class="pre">lisainstrument</span></code>) and inject GW + Orbit data</p></li>
+<li><p>Compute TDI observables (<code class="docutils literal notranslate"><span class="pre">pytdi</span></code>)</p></li>
 </ol>
-<p>Start by installing the required packages:</p>
+<p>!!WARNING
+The runtime for simulating more than a few hours of data using this code-suite is expensive. Look the following plot (generated using the data from Figure 9, blue curve, top right panel of <a class="reference external" href="https://arxiv.org/abs/2212.05351">Bayle et al. 2023</a>):
+<img alt="" src="../_images/runtime.png" /></p>
+<p>In this tutorial we will only be simulating 1 hour of data. This takes about 10 minutes on my laptop.</p>
+<p>If you want to use pre-simulated data, you can use the <a class="reference external" href="https://lisa-data-challenge.lal.in2p3.fr/">LISA Data Challenge</a> data.</p>
+<section id="acknowledgements">
+<h2>Acknowledgements<a class="headerlink" href="#acknowledgements" title="Permalink to this heading">#</a></h2>
+<p>These notes were compiled using a variety of sources:</p>
+<ul class="simple">
+<li><p><a class="reference external" href="https://arxiv.org/pdf/2204.12142.pdf">Q. Baghi’s paper on the LISA data challenge</a></p></li>
+<li><p><a class="reference external" href="https://colab.research.google.com/drive/1BB5gAynmvAXExrphOWVD_3LlX31nPNWW?usp=sharing#scrollTo=fn5FAaJK9Try">LDC workshop</a></p></li>
+<li><p><a class="reference external" href="https://arxiv.org/abs/2212.05351">Jean-Baptiste Bayle’s paper on the LISA simulation suite</a></p></li>
+</ul>
+</section>
+<section id="installation-and-setup">
+<h2>Installation and setup<a class="headerlink" href="#installation-and-setup" title="Permalink to this heading">#</a></h2>
+<p>We start with some installs:</p>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
 <div class="highlight-ipython2 notranslate"><div class="highlight"><pre><span></span><span class="o">!</span><span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>lisaorbits<span class="w"> </span>-q
 <span class="o">!</span><span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>lisagwresponse<span class="w"> </span>-q
 <span class="o">!</span><span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>lisainstrument<span class="w"> </span>-q
-<span class="o">!</span><span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>bilby<span class="w"> </span>-q<span class="w"> </span>--no-warn-script-location
+<span class="o">!</span><span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>pytdi<span class="w"> </span>-q
+<span class="o">!</span><span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>jupyter-autotime<span class="w"> </span>-q
+<span class="o">!</span><span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>memory_profiler<span class="w"> </span>-q
+<span class="o">!</span><span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>legwork<span class="w"> </span>-q
 </pre></div>
 </div>
 </div>
+<div class="cell_output docutils container">
+<div class="output text_html"><pre></pre></div></div>
 </div>
+<p>Sprinkle in some <em>magic</em>:</p>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
 <div class="highlight-ipython2 notranslate"><div class="highlight"><pre><span></span><span class="o">%</span><span class="k">matplotlib</span> inline
-<span class="kn">import</span> <span class="nn">lisaorbits</span><span class="o">,</span> <span class="nn">lisainstrument</span><span class="o">,</span> <span class="nn">lisagwresponse</span>
-<span class="kn">import</span> <span class="nn">os</span>
-<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
-<span class="kn">from</span> <span class="nn">bilby.core.prior</span> <span class="kn">import</span> <span class="n">Uniform</span><span class="p">,</span> <span class="n">PriorDict</span><span class="p">,</span> <span class="n">Normal</span>
-
-<span class="n">OUTDIR</span> <span class="o">=</span> <span class="s2">&quot;simulated_lisa_data&quot;</span>
-<span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="n">OUTDIR</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-<span class="n">dt</span> <span class="o">=</span> <span class="mi">100000</span>  <span class="c1"># seconds</span>
-<span class="n">year_in_sec</span> <span class="o">=</span> <span class="mf">365.25</span> <span class="o">*</span> <span class="mi">24</span> <span class="o">*</span> <span class="mi">60</span> <span class="o">*</span> <span class="mi">60</span>  <span class="c1"># seconds</span>
-<span class="n">datasize</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">year_in_sec</span> <span class="o">/</span> <span class="n">dt</span><span class="p">)</span>
-<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Datasize: </span><span class="si">{</span><span class="n">datasize</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="o">%</span><span class="k">load_ext</span> memory_profiler
+<span class="o">%</span><span class="k">load_ext</span> autotime
 </pre></div>
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>Datasize: 315
+<div class="output text_html"><pre></pre></div><div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>The memory_profiler extension is already loaded. To reload it, use:
+  %reload_ext memory_profiler
+The autotime extension is already loaded. To reload it, use:
+  %reload_ext autotime
 </pre></div>
 </div>
 </div>
 </div>
-<section id="lisa-orbit-generation">
-<h2>LISA Orbit generation<a class="headerlink" href="#lisa-orbit-generation" title="Permalink to this heading">#</a></h2>
-<p>Generate a simple Keplerian orbit with equal arm lengths for 1 years. Save the data.</p>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython2 notranslate"><div class="highlight"><pre><span></span><span class="n">orbit</span> <span class="o">=</span> <span class="n">lisaorbits</span><span class="o">.</span><span class="n">KeplerianOrbits</span><span class="p">(</span>
-    <span class="n">L</span><span class="o">=</span><span class="mf">2.5e9</span><span class="p">,</span>  <span class="c1"># m (arm length)</span>
-    <span class="n">dt</span><span class="o">=</span><span class="n">dt</span><span class="p">,</span>  <span class="c1"># seconds (data sampling time)</span>
-    <span class="n">size</span><span class="o">=</span><span class="n">datasize</span><span class="p">,</span>  <span class="c1"># number of data points</span>
-<span class="p">)</span>
-<span class="n">orbit_t0</span> <span class="o">=</span> <span class="n">orbit</span><span class="o">.</span><span class="n">t</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-<span class="n">orbits_fn</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">OUTDIR</span><span class="si">}</span><span class="s2">/keplerian.hdf5&quot;</span>
-<span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">orbits_fn</span><span class="p">):</span>
-    <span class="n">orbit</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">orbits_fn</span><span class="p">)</span>
+<div class="highlight-ipython2 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">lisaorbits</span><span class="o">,</span> <span class="nn">lisainstrument</span><span class="o">,</span> <span class="nn">lisagwresponse</span>
+<span class="kn">import</span> <span class="nn">os</span>
+<span class="kn">import</span> <span class="nn">numpy</span> <span class="k">as</span> <span class="nn">np</span>
+<span class="kn">import</span> <span class="nn">matplotlib.pyplot</span> <span class="k">as</span> <span class="nn">plt</span>
+<span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">shutil</span>
+<span class="kn">import</span> <span class="nn">h5py</span>
 
-<span class="n">orbit</span><span class="o">.</span><span class="n">plot_links</span><span class="p">()</span>
-<span class="n">orbit</span><span class="o">.</span><span class="n">plot_spacecraft</span><span class="p">(</span><span class="n">sc</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">set_logger_level</span><span class="p">(</span><span class="n">loggers</span><span class="p">,</span> <span class="n">level</span><span class="p">):</span>
+    <span class="k">for</span> <span class="n">l</span> <span class="ow">in</span> <span class="n">loggers</span><span class="p">:</span>
+        <span class="n">logger</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="n">l</span><span class="p">)</span>
+        <span class="n">logger</span><span class="o">.</span><span class="n">setLevel</span><span class="p">(</span><span class="n">level</span><span class="p">)</span>
+
+
+<span class="n">set_logger_level</span><span class="p">(</span>
+    <span class="p">[</span><span class="s1">&#39;lisaorbits&#39;</span><span class="p">,</span> <span class="s1">&#39;lisainstrument&#39;</span><span class="p">,</span> <span class="s1">&#39;lisagwresponse&#39;</span><span class="p">,</span> <span class="s1">&#39;pytdi&#39;</span><span class="p">],</span>
+    <span class="n">logging</span><span class="o">.</span><span class="n">INFO</span>
+<span class="p">)</span>
+
+<span class="n">SEC_IN_HOUR</span> <span class="o">=</span> <span class="mi">60</span> <span class="o">*</span> <span class="mi">60</span>  <span class="c1"># seconds</span>
+<span class="n">SEC_IN_DAY</span> <span class="o">=</span> <span class="mi">24</span> <span class="o">*</span> <span class="n">SEC_IN_HOUR</span>  <span class="c1"># seconds</span>
+<span class="n">SEC_IN_YEAR</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="mf">365.25</span> <span class="o">*</span> <span class="n">SEC_IN_DAY</span><span class="p">)</span>  <span class="c1"># seconds</span>
 </pre></div>
 </div>
 </div>
 <div class="cell_output docutils container">
-<img alt="../_images/de34329de7a5222e5d870abeacb8c257f0dd18e343c168d1b17b2edfd2a02a0b.png" src="../_images/de34329de7a5222e5d870abeacb8c257f0dd18e343c168d1b17b2edfd2a02a0b.png" />
-<img alt="../_images/2ac56a001c8aac09a404919ffa1d57c31f6aef1a008d3d1c981b9be7eafbc9bb.png" src="../_images/2ac56a001c8aac09a404919ffa1d57c31f6aef1a008d3d1c981b9be7eafbc9bb.png" />
+<div class="output text_html"><pre></pre></div></div>
+</div>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython2 notranslate"><div class="highlight"><pre><span></span><span class="n">CLEAN</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="n">OUTDIR</span> <span class="o">=</span> <span class="s2">&quot;simulated_lisa_data&quot;</span>
+
+<span class="n">orbits_fn</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">OUTDIR</span><span class="si">}</span><span class="s2">/keplerian.hdf5&quot;</span>
+<span class="n">gws_fn</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">OUTDIR</span><span class="si">}</span><span class="s2">/gws.hdf5&quot;</span>
+<span class="n">instrument_fn</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">OUTDIR</span><span class="si">}</span><span class="s2">/instrument.hdf5&quot;</span>
+<span class="n">tdi_fn</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">OUTDIR</span><span class="si">}</span><span class="s2">/tdi.hdf5&quot;</span>
+
+<span class="k">if</span> <span class="n">CLEAN</span> <span class="ow">and</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">OUTDIR</span><span class="p">):</span>
+    <span class="n">shutil</span><span class="o">.</span><span class="n">rmtree</span><span class="p">(</span><span class="n">OUTDIR</span><span class="p">)</span>
+<span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="n">OUTDIR</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+<span class="n">dt</span> <span class="o">=</span> <span class="mf">0.25</span>  <span class="c1"># s</span>
+<span class="n">fs</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">/</span> <span class="n">dt</span>  <span class="c1"># Hz</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_html"><pre></pre></div></div>
+</div>
+</section>
+<section id="lisa-orbit-generation">
+<h2>LISA Orbit generation<a class="headerlink" href="#lisa-orbit-generation" title="Permalink to this heading">#</a></h2>
+<p>We can generate the LISA spacecraft orbits once and save them to a file. This is done using the <code class="docutils literal notranslate"><span class="pre">lisaorbits</span></code> package. The package has a few different types of ‘Orbits’:</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython2 notranslate"><div class="highlight"><pre><span></span><span class="k">for</span> <span class="n">name</span> <span class="ow">in</span> <span class="nb">dir</span><span class="p">(</span><span class="n">lisaorbits</span><span class="o">.</span><span class="n">orbits</span><span class="p">):</span>
+    <span class="k">if</span> <span class="s1">&#39;Orbit&#39;</span> <span class="ow">in</span> <span class="n">name</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="n">name</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_html"><pre></pre></div><div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>EqualArmlengthOrbits
+InterpolatedOrbits
+KeplerianOrbits
+OEMOrbits
+OrbitEphemerisMessage
+Orbits
+ResampledOrbits
+</pre></div>
+</div>
+</div>
+</div>
+<p>We will generate a simple Keplerian orbit with equal arm lengths for N_YEARS_OF_OBS years and save the data.</p>
+<p>We will also make some plots of the orbits. Note the LISA naming convention for the spacecrafts:</p>
+<ul class="simple">
+<li><p>3 spacecraft, labeled 1, 2, 3</p></li>
+<li><p>2 movable assemblies (MOSAs) per spacecraft, labelled 12 and 13, 23 and 21, 31 and 32</p></li>
+</ul>
+<p>The MOSAs are the optical benches hold the laser interferometers and other stuff. Each MOSA has three interferometers, of which only the ISI (inter-spacecraft interferometer) is used for GW detection.</p>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython2 notranslate"><div class="highlight"><pre><span></span><span class="c1"># NOTE: This section is solely for generating some mock orbits to plot -- dont use for the simulation!</span>
+<span class="n">dt</span> <span class="o">=</span> <span class="mi">60</span> <span class="o">*</span> <span class="mi">60</span> <span class="o">*</span> <span class="mi">12</span>  <span class="c1"># s</span>
+<span class="n">fs</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">/</span> <span class="n">dt</span>  <span class="c1"># Hz</span>
+<span class="n">N_YEARS_OF_OBS</span> <span class="o">=</span> <span class="mi">1</span>
+<span class="n">duration</span> <span class="o">=</span> <span class="n">N_YEARS_OF_OBS</span> <span class="o">*</span> <span class="n">SEC_IN_YEAR</span>  <span class="c1"># seconds</span>
+<span class="n">datasize</span> <span class="o">=</span> <span class="n">duration</span> <span class="o">*</span> <span class="n">fs</span>  <span class="c1"># samples</span>
+<span class="n">orbit_for_plotting</span> <span class="o">=</span> <span class="n">lisaorbits</span><span class="o">.</span><span class="n">EqualArmlengthOrbits</span><span class="p">(</span>
+    <span class="n">dt</span><span class="o">=</span><span class="n">dt</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">datasize</span>
+<span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">plot_spacecraft_positions</span><span class="p">(</span><span class="n">orbit</span><span class="p">):</span>
+    <span class="n">sc_positions</span> <span class="o">=</span> <span class="n">orbit</span><span class="o">.</span><span class="n">compute_position</span><span class="p">(</span><span class="n">orbit</span><span class="o">.</span><span class="n">t</span><span class="p">,</span> <span class="p">[</span><span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">3</span><span class="p">])</span>
+    <span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">subplots</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="mi">5</span><span class="p">))</span>
+    <span class="n">kwgs</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">alpha</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span> <span class="n">lw</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">sc_positions</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">sc_positions</span><span class="p">[:,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="n">label</span><span class="o">=</span><span class="s1">&#39;SC 1&#39;</span><span class="p">,</span> <span class="o">**</span><span class="n">kwgs</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">sc_positions</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">sc_positions</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="n">label</span><span class="o">=</span><span class="s1">&#39;SC 2&#39;</span><span class="p">,</span> <span class="o">**</span><span class="n">kwgs</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">sc_positions</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">0</span><span class="p">],</span> <span class="n">sc_positions</span><span class="p">[:,</span> <span class="mi">2</span><span class="p">,</span> <span class="mi">1</span><span class="p">],</span> <span class="n">label</span><span class="o">=</span><span class="s1">&#39;SC 3&#39;</span><span class="p">,</span> <span class="o">**</span><span class="n">kwgs</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="s1">&#39;*&#39;</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;orange&#39;</span><span class="p">,</span> <span class="n">markersize</span><span class="o">=</span><span class="mi">10</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s1">&#39;Sun&#39;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">loc</span><span class="o">=</span><span class="s1">&#39;upper right&#39;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s1">&#39;x [m]&#39;</span><span class="p">)</span>
+    <span class="n">ax</span><span class="o">.</span><span class="n">set_ylabel</span><span class="p">(</span><span class="s1">&#39;y [m]&#39;</span><span class="p">)</span>
+
+
+<span class="n">plot_spacecraft_positions</span><span class="p">(</span><span class="n">orbit_for_plotting</span><span class="p">)</span>
+<span class="n">orbit_for_plotting</span><span class="o">.</span><span class="n">plot_links</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_html"><pre></pre></div><img alt="../_images/b0551e4b507b039b9c570a4622e5435f73629ce359c275572adacfbbce8a7924.png" src="../_images/b0551e4b507b039b9c570a4622e5435f73629ce359c275572adacfbbce8a7924.png" />
+<img alt="../_images/83a58fa04305944477ae38100ec0869d1bb39cdf59fd5086fdfb5ba9e3e18cac.png" src="../_images/83a58fa04305944477ae38100ec0869d1bb39cdf59fd5086fdfb5ba9e3e18cac.png" />
+</div>
+</div>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython2 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Now some more realistic orbits for the simulation</span>
+
+<span class="n">N_ORBIT_DAYS</span> <span class="o">=</span> <span class="mi">3</span>
+<span class="n">dt</span> <span class="o">=</span> <span class="mf">0.25</span>  <span class="c1"># s</span>
+<span class="n">fs</span> <span class="o">=</span> <span class="mi">1</span> <span class="o">/</span> <span class="n">dt</span>  <span class="c1"># Hz</span>
+<span class="n">duration</span> <span class="o">=</span> <span class="n">N_ORBIT_DAYS</span> <span class="o">*</span> <span class="n">SEC_IN_DAY</span>  <span class="c1"># seconds</span>
+<span class="n">datasize</span> <span class="o">=</span> <span class="n">duration</span> <span class="o">*</span> <span class="n">fs</span>  <span class="c1"># samples</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Orbit datalen: </span><span class="si">{</span><span class="n">datasize</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">N_ORBIT_DAYS</span><span class="si">}</span><span class="s2"> days)&quot;</span><span class="p">)</span>
+
+<span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">isfile</span><span class="p">(</span><span class="n">orbits_fn</span><span class="p">):</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Generating orbit file...&quot;</span><span class="p">)</span>
+    <span class="n">orbit</span> <span class="o">=</span> <span class="n">lisaorbits</span><span class="o">.</span><span class="n">EqualArmlengthOrbits</span><span class="p">(</span>
+        <span class="n">dt</span><span class="o">=</span><span class="n">dt</span><span class="p">,</span>  <span class="c1"># seconds (data sampling time)</span>
+        <span class="n">size</span><span class="o">=</span><span class="n">datasize</span><span class="p">,</span>  <span class="c1"># number of data points</span>
+        <span class="n">t0</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>  <span class="c1"># start time</span>
+    <span class="p">)</span>
+    <span class="n">orbit</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">orbits_fn</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Orbit file saved!&quot;</span><span class="p">)</span>
+<span class="k">else</span><span class="p">:</span>
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Using cached orbit file&quot;</span><span class="p">)</span>
+
+<span class="c1"># loading the orbit t0</span>
+<span class="k">with</span> <span class="n">h5py</span><span class="o">.</span><span class="n">File</span><span class="p">(</span><span class="n">orbits_fn</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+    <span class="n">orbits_t0</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s1">&#39;t0&#39;</span><span class="p">]</span>
+    <span class="n">orbit_size</span> <span class="o">=</span> <span class="n">f</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s1">&#39;size&#39;</span><span class="p">]</span>
+    <span class="n">orbit_duration</span> <span class="o">=</span> <span class="n">orbit_size</span> <span class="o">*</span> <span class="n">f</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s1">&#39;dt&#39;</span><span class="p">]</span>
+    <span class="n">orbit_t</span> <span class="o">=</span> <span class="n">orbits_t0</span> <span class="o">+</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="n">orbit_size</span><span class="p">)</span> <span class="o">*</span> <span class="n">f</span><span class="o">.</span><span class="n">attrs</span><span class="p">[</span><span class="s1">&#39;dt&#39;</span><span class="p">]</span>
+    <span class="n">orbit_n_days</span> <span class="o">=</span> <span class="p">(</span><span class="n">orbit_t</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">-</span><span class="n">orbit_t</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span><span class="o">/</span><span class="n">SEC_IN_DAY</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Loaded Orbit size: </span><span class="si">{</span><span class="n">orbit_size</span><span class="si">:</span><span class="s2">,</span><span class="si">}</span><span class="s2"> (</span><span class="si">{</span><span class="n">orbit_n_days</span><span class="si">:</span><span class="s2">.2</span><span class="si">}</span><span class="s2"> days)&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_html"><pre></pre></div><div class="output stream highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>Orbit datalen: 1,036,800.0 (3 days)
+Generating orbit file...
+Orbit file saved!
+Loaded Orbit size: 1,036,800 (3.0 days)
+</pre></div>
+</div>
 </div>
 </div>
 </section>
 <section id="gw-response">
 <h2>GW Response<a class="headerlink" href="#gw-response" title="Permalink to this heading">#</a></h2>
-<p>Code to simulate different types of GW signals (given the LISA orbits)</p>
+<p>Given the orbit, we can generate the response of GW signals on the 6 LISA links (sometimes called “projections”) using the <code class="docutils literal notranslate"><span class="pre">lisagwresponse</span></code> package.</p>
+<p>The package has a few different types of ‘GWs’:</p>
+<ul class="simple">
+<li><p>lisagwresponse.response.VerificationBinary</p></li>
+<li><p>lisagwresponse.response.GalacticBinary</p></li>
+<li><p>lisagwresponse.response.StochasticBackground</p></li>
+<li><p>lisagwresponse.response.StochasticPointSource</p></li>
+</ul>
+<p>In the following bit of code we will generate a few different GW sources and demonstrate how we can add them together. We will also save the GW data to a file.</p>
+<p>!NOTE!
+We need to add some padding to the start and end of the data to avoid edge effects when we compute the TDI observables.</p>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython2 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Create a flat-spectrum source</span>
-<span class="n">generator</span> <span class="o">=</span> <span class="n">lisagwresponse</span><span class="o">.</span><span class="n">psd</span><span class="o">.</span><span class="n">white_generator</span><span class="p">(</span><span class="mf">1E-21</span><span class="p">)</span>
-<span class="n">sgwb_white</span> <span class="o">=</span> <span class="n">lisagwresponse</span><span class="o">.</span><span class="n">StochasticPointSource</span><span class="p">(</span>
-    <span class="n">generator</span><span class="p">,</span> <span class="n">orbits</span><span class="o">=</span><span class="n">orbits_fn</span><span class="p">,</span> <span class="n">gw_beta</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">gw_lambda</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">datasize</span><span class="p">,</span>
-    <span class="n">t0</span><span class="o">=</span><span class="mf">10.0</span> <span class="o">+</span> <span class="n">orbit_t0</span>
-<span class="p">)</span>
-<span class="n">sgwb_white</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">sgwb_white</span><span class="o">.</span><span class="n">t</span><span class="p">)</span>
-<span class="n">sgwb_white_fn</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">OUTDIR</span><span class="si">}</span><span class="s2">/sgwb_white.hdf5&quot;</span>
-<span class="n">sgwb_white</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">sgwb_white_fn</span><span class="p">)</span>
+<div class="highlight-ipython2 notranslate"><div class="highlight"><pre><span></span><span class="n">gws</span> <span class="o">=</span> <span class="p">[]</span>
+
+<span class="c1"># Setup GW Response data lenghts</span>
+<span class="n">N_HOURS_OF_OBS</span> <span class="o">=</span> <span class="mf">0.5</span>  <span class="c1"># hours</span>
+<span class="n">duration</span> <span class="o">=</span> <span class="n">SEC_IN_HOUR</span> <span class="o">*</span> <span class="n">N_HOURS_OF_OBS</span>  <span class="c1"># s</span>
+<span class="n">size</span> <span class="o">=</span> <span class="n">duration</span> <span class="o">*</span> <span class="n">fs</span>  <span class="c1"># samples</span>
+<span class="n">t0</span> <span class="o">=</span> <span class="n">orbits_t0</span> <span class="o">+</span> <span class="mi">1</span> <span class="o">*</span> <span class="n">SEC_IN_HOUR</span>  <span class="c1"># s</span>
+<span class="n">data_kwgs</span> <span class="o">=</span> <span class="nb">dict</span><span class="p">(</span><span class="n">t0</span><span class="o">=</span><span class="n">t0</span><span class="p">,</span> <span class="n">dt</span><span class="o">=</span><span class="n">dt</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">size</span><span class="p">,</span> <span class="n">orbits</span><span class="o">=</span><span class="n">orbits_fn</span><span class="p">)</span>
+
+
+<span class="k">def</span> <span class="nf">plot_orbit_data_region_vs_gw_response_region</span><span class="p">():</span>
+    <span class="n">gw_injection_region</span> <span class="o">=</span> <span class="p">[</span><span class="n">t0</span><span class="p">,</span> <span class="p">(</span><span class="n">t0</span> <span class="o">+</span> <span class="n">duration</span><span class="p">)]</span>
+
+    <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">5</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>
+    <span class="c1"># shade region from orbit_t[0] to orbit_t[-1]</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">axvspan</span><span class="p">(</span>
+        <span class="mi">0</span><span class="p">,</span> <span class="p">(</span><span class="n">orbit_t</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">orbits_t0</span> <span class="p">),</span>
+        <span class="n">alpha</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;tab:green&#39;</span><span class="p">,</span>
+        <span class="n">label</span><span class="o">=</span><span class="s1">&#39;Orbit Data&#39;</span>
+    <span class="p">)</span>
+
+    <span class="n">plt</span><span class="o">.</span><span class="n">axvspan</span><span class="p">(</span>
+                <span class="p">(</span><span class="n">gw_injection_region</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="n">orbits_t0</span><span class="p">),</span>
+                <span class="p">(</span><span class="n">gw_injection_region</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">orbits_t0</span><span class="p">),</span>
+        <span class="n">alpha</span><span class="o">=</span><span class="mf">0.1</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;tab:orange&#39;</span><span class="p">,</span>
+        <span class="n">label</span><span class="o">=</span><span class="s1">&#39;GW injection region&#39;</span>
+    <span class="p">)</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">axvline</span><span class="p">((</span><span class="n">gw_injection_region</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">-</span> <span class="n">orbits_t0</span><span class="p">),</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;tab:orange&#39;</span><span class="p">)</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">axvline</span><span class="p">((</span><span class="n">gw_injection_region</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="n">orbits_t0</span><span class="p">),</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;tab:orange&#39;</span><span class="p">)</span>
+
+    <span class="c1"># remove y-axis labels</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">yticks</span><span class="p">([])</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s1">&#39;Time- t0 [s] &#39;</span><span class="p">)</span>
+    <span class="c1"># use Sci notation for xticks</span>
+    <span class="n">plt</span><span class="o">.</span><span class="n">ticklabel_format</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="s1">&#39;x&#39;</span><span class="p">,</span> <span class="n">style</span><span class="o">=</span><span class="s1">&#39;sci&#39;</span><span class="p">,</span> <span class="n">scilimits</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">))</span>
+
+    <span class="c1"># add secondary xticks on top of plot in hours</span>
+    <span class="n">sec2hr</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span> <span class="o">/</span> <span class="n">SEC_IN_HOUR</span>
+    <span class="n">hr2sec</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span> <span class="n">x</span> <span class="o">*</span> <span class="n">SEC_IN_HOUR</span>
+
+    <span class="n">ax</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">gca</span><span class="p">()</span>
+    <span class="n">secax</span> <span class="o">=</span> <span class="n">ax</span><span class="o">.</span><span class="n">secondary_xaxis</span><span class="p">(</span><span class="s1">&#39;top&#39;</span><span class="p">,</span> <span class="n">functions</span><span class="o">=</span><span class="p">(</span><span class="n">sec2hr</span><span class="p">,</span> <span class="n">hr2sec</span><span class="p">))</span>
+    <span class="n">secax</span><span class="o">.</span><span class="n">set_xlabel</span><span class="p">(</span><span class="s1">&#39;Time - t0 [hr]&#39;</span><span class="p">)</span>
+
+
+    <span class="n">plt</span><span class="o">.</span><span class="n">xlim</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">orbit_duration</span><span class="p">)</span>
+    <span class="n">_</span> <span class="o">=</span> <span class="n">plt</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">loc</span><span class="o">=</span><span class="s1">&#39;upper right&#39;</span><span class="p">)</span>
+
+<span class="n">plot_orbit_data_region_vs_gw_response_region</span><span class="p">()</span>
 </pre></div>
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>You are using an orbit file in a version that might not be fully supported
+<div class="output text_html"><pre></pre></div><img alt="../_images/23ec69edf140f283aac6f2fc781e089e8553b99210046f27050db3f105d1ce63.png" src="../_images/23ec69edf140f283aac6f2fc781e089e8553b99210046f27050db3f105d1ce63.png" />
+</div>
+</div>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython2 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Create a flat-spectrum source</span>
+
+<span class="n">generator</span> <span class="o">=</span> <span class="n">lisagwresponse</span><span class="o">.</span><span class="n">psd</span><span class="o">.</span><span class="n">white_generator</span><span class="p">(</span><span class="mf">1E-21</span><span class="p">)</span>
+<span class="n">gws</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">lisagwresponse</span><span class="o">.</span><span class="n">StochasticPointSource</span><span class="p">(</span>
+    <span class="n">generator</span><span class="p">,</span> <span class="n">gw_beta</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">gw_lambda</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="o">**</span><span class="n">data_kwgs</span><span class="p">,</span>
+<span class="p">))</span>
+<span class="n">gws</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">gws</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">t</span><span class="p">)</span>
 </pre></div>
 </div>
-<img alt="../_images/62f13f1a0f1540ec8855396fc3615f2e3d559ffecd0fca64095bdf0a53dbddde.png" src="../_images/62f13f1a0f1540ec8855396fc3615f2e3d559ffecd0fca64095bdf0a53dbddde.png" />
-<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>You are using an orbit file in a version that might not be fully supported
+</div>
+<div class="cell_output docutils container">
+<div class="output text_html"><pre></pre></div><div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>You are using an orbit file in a version that might not be fully supported
 </pre></div>
 </div>
+<img alt="../_images/e3ebf199ab0eee4e86979a398983ea41ebfcd9706c875190ac7bf9b487bbb47c.png" src="../_images/e3ebf199ab0eee4e86979a398983ea41ebfcd9706c875190ac7bf9b487bbb47c.png" />
 </div>
 </div>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
 <div class="highlight-ipython2 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Create a -2/3 power-law source</span>
 <span class="n">generator</span> <span class="o">=</span> <span class="n">lisagwresponse</span><span class="o">.</span><span class="n">psd</span><span class="o">.</span><span class="n">ifft_generator</span><span class="p">(</span><span class="k">lambda</span> <span class="n">f</span><span class="p">:</span> <span class="n">f</span> <span class="o">**</span> <span class="p">(</span><span class="o">-</span><span class="mi">2</span> <span class="o">/</span> <span class="mi">3</span><span class="p">))</span>
-<span class="n">sgwb_powerlaw</span> <span class="o">=</span> <span class="n">lisagwresponse</span><span class="o">.</span><span class="n">StochasticPointSource</span><span class="p">(</span>
-    <span class="n">generator</span><span class="p">,</span> <span class="n">orbits</span><span class="o">=</span><span class="n">orbits_fn</span><span class="p">,</span> <span class="n">gw_beta</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">gw_lambda</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">dt</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span>
-    <span class="n">size</span><span class="o">=</span><span class="n">datasize</span><span class="p">,</span> <span class="n">t0</span><span class="o">=</span><span class="mf">10.0</span> <span class="o">+</span> <span class="n">orbit_t0</span>
-<span class="p">)</span>
-<span class="n">sgwb_powerlaw</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">sgwb_powerlaw</span><span class="o">.</span><span class="n">t</span><span class="p">)</span>
-<span class="n">sgwb_powerlaw_fn</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">OUTDIR</span><span class="si">}</span><span class="s2">/sgwb_powerlaw.hdf5&quot;</span>
-<span class="n">sgwb_powerlaw</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">sgwb_powerlaw_fn</span><span class="p">)</span>
+<span class="n">gws</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">lisagwresponse</span><span class="o">.</span><span class="n">StochasticPointSource</span><span class="p">(</span>
+    <span class="n">generator</span><span class="p">,</span> <span class="n">gw_beta</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">gw_lambda</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="o">**</span><span class="n">data_kwgs</span>
+<span class="p">))</span>
+<span class="n">gws</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">gws</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">t</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>You are using an orbit file in a version that might not be fully supported
+<div class="output text_html"><pre></pre></div><div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>You are using an orbit file in a version that might not be fully supported
 </pre></div>
 </div>
-<img alt="../_images/03472526c28dd59ad33b7a23d209bc270ca8d5c232bab85ae745db4fea442ce5.png" src="../_images/03472526c28dd59ad33b7a23d209bc270ca8d5c232bab85ae745db4fea442ce5.png" />
-<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>You are using an orbit file in a version that might not be fully supported
-</pre></div>
-</div>
+<img alt="../_images/b9d46826d85b7ade5f044ada7568bd3c757be9d4cd06d351226b0b6e8fa49be6.png" src="../_images/b9d46826d85b7ade5f044ada7568bd3c757be9d4cd06d351226b0b6e8fa49be6.png" />
 </div>
 </div>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython2 notranslate"><div class="highlight"><pre><span></span><span class="c1">## Create 10 binaries</span>
-<span class="n">n_binaries</span> <span class="o">=</span> <span class="mi">10</span>
-<span class="n">injection_distribution</span> <span class="o">=</span> <span class="n">PriorDict</span><span class="p">(</span><span class="nb">dict</span><span class="p">(</span>
-    <span class="n">A</span><span class="o">=</span><span class="n">Normal</span><span class="p">(</span><span class="n">mu</span><span class="o">=</span><span class="mf">1E-21</span><span class="p">,</span> <span class="n">sigma</span><span class="o">=</span><span class="mf">1E-20</span><span class="p">),</span>
-    <span class="n">f</span><span class="o">=</span><span class="n">Uniform</span><span class="p">(</span><span class="mf">5E-4</span><span class="p">,</span> <span class="mf">2E-3</span><span class="p">),</span>
-    <span class="n">gw_beta</span><span class="o">=</span><span class="n">Uniform</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span> <span class="o">/</span> <span class="mi">2</span><span class="p">),</span>
-    <span class="n">gw_lambda</span><span class="o">=</span><span class="n">Uniform</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">np</span><span class="o">.</span><span class="n">pi</span><span class="p">),</span>
-<span class="p">))</span>
-<span class="n">binaries</span> <span class="o">=</span> <span class="p">[]</span>
+<div class="highlight-ipython2 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Create few binaries</span>
+<span class="n">n_binaries</span> <span class="o">=</span> <span class="mi">3</span>
+<span class="n">A</span> <span class="o">=</span> <span class="mf">1E-21</span>
+
 <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_binaries</span><span class="p">):</span>
-    <span class="n">parms</span> <span class="o">=</span> <span class="n">injection_distribution</span><span class="o">.</span><span class="n">sample</span><span class="p">()</span>
-    <span class="n">binaries</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+    <span class="n">f</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mf">5E-4</span><span class="p">,</span> <span class="mf">2E-3</span><span class="p">)</span>
+    <span class="n">gws</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
         <span class="n">lisagwresponse</span><span class="o">.</span><span class="n">GalacticBinary</span><span class="p">(</span>
-            <span class="n">parms</span><span class="p">[</span><span class="s1">&#39;A&#39;</span><span class="p">],</span> <span class="n">parms</span><span class="p">[</span><span class="s1">&#39;f&#39;</span><span class="p">],</span>
-            <span class="n">gw_beta</span><span class="o">=</span><span class="n">parms</span><span class="p">[</span><span class="s1">&#39;gw_beta&#39;</span><span class="p">],</span> <span class="n">gw_lambda</span><span class="o">=</span><span class="n">parms</span><span class="p">[</span><span class="s1">&#39;gw_lambda&#39;</span><span class="p">],</span>
-            <span class="n">dt</span><span class="o">=</span><span class="mi">5</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="n">datasize</span><span class="p">,</span> <span class="n">t0</span><span class="o">=</span><span class="mf">10.0</span> <span class="o">+</span> <span class="n">orbit_t0</span><span class="p">,</span>
-            <span class="n">orbits</span><span class="o">=</span><span class="n">orbits_fn</span>
+            <span class="n">A</span><span class="p">,</span> <span class="n">f</span><span class="p">,</span>
+            <span class="n">gw_beta</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">gw_lambda</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+            <span class="o">**</span><span class="n">data_kwgs</span>
         <span class="p">)</span>
     <span class="p">)</span>
-    <span class="n">binary_fn</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">OUTDIR</span><span class="si">}</span><span class="s2">/gw_binary_</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">.hdf5&quot;</span>
-    <span class="n">binaries</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">binary_fn</span><span class="p">)</span>
-
-<span class="n">binaries</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">binaries</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">t</span><span class="p">)</span>
+<span class="n">gws</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">gws</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">t</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
 <div class="cell_output docutils container">
-<div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>You are using an orbit file in a version that might not be fully supported
-You are using an orbit file in a version that might not be fully supported
-You are using an orbit file in a version that might not be fully supported
-You are using an orbit file in a version that might not be fully supported
-You are using an orbit file in a version that might not be fully supported
-You are using an orbit file in a version that might not be fully supported
-You are using an orbit file in a version that might not be fully supported
-You are using an orbit file in a version that might not be fully supported
-You are using an orbit file in a version that might not be fully supported
-You are using an orbit file in a version that might not be fully supported
-You are using an orbit file in a version that might not be fully supported
-You are using an orbit file in a version that might not be fully supported
-You are using an orbit file in a version that might not be fully supported
-You are using an orbit file in a version that might not be fully supported
-You are using an orbit file in a version that might not be fully supported
-You are using an orbit file in a version that might not be fully supported
-You are using an orbit file in a version that might not be fully supported
-You are using an orbit file in a version that might not be fully supported
+<div class="output text_html"><pre></pre></div><div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>You are using an orbit file in a version that might not be fully supported
 You are using an orbit file in a version that might not be fully supported
 You are using an orbit file in a version that might not be fully supported
 </pre></div>
 </div>
-<img alt="../_images/24c4e492b0b272e4af9be4221b40ae2e0c2c64586d85fea4771d8e84c9a4fa79.png" src="../_images/24c4e492b0b272e4af9be4221b40ae2e0c2c64586d85fea4771d8e84c9a4fa79.png" />
+<img alt="../_images/fae2a8e198e1c77ebe3ed1de699b37ff9fac76c3acac24338c398df7acd2af83.png" src="../_images/fae2a8e198e1c77ebe3ed1de699b37ff9fac76c3acac24338c398df7acd2af83.png" />
 </div>
 </div>
 <div class="cell docutils container">
 <div class="cell_input docutils container">
-<div class="highlight-ipython2 notranslate"><div class="highlight"><pre><span></span><span class="c1"># TODO Combine GW signals into one object</span>
+<div class="highlight-ipython2 notranslate"><div class="highlight"><pre><span></span><span class="c1"># write all GWs into one object</span>
+<span class="n">gw_fname</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">OUTDIR</span><span class="si">}</span><span class="s2">/gws.hdf5&quot;</span>
+<span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">gw_fname</span><span class="p">):</span>
+    <span class="n">os</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">gw_fname</span><span class="p">)</span>  <span class="c1"># remove old file</span>
+<span class="k">for</span> <span class="n">gw</span> <span class="ow">in</span> <span class="n">gws</span><span class="p">:</span>
+    <span class="n">gw</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">gw_fname</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_html"><pre></pre></div><div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>You are using an orbit file in a version that might not be fully supported
+You are using a GW file in a version that might not be fully supported
+You are using an orbit file in a version that might not be fully supported
+You are using a GW file in a version that might not be fully supported
+You are using an orbit file in a version that might not be fully supported
+You are using a GW file in a version that might not be fully supported
+You are using an orbit file in a version that might not be fully supported
+You are using a GW file in a version that might not be fully supported
+You are using an orbit file in a version that might not be fully supported
 </pre></div>
 </div>
 </div>
@@ -532,9 +740,8 @@ You are using an orbit file in a version that might not be fully supported
 <div class="cell docutils container">
 <div class="cell_input docutils container">
 <div class="highlight-ipython2 notranslate"><div class="highlight"><pre><span></span><span class="n">instrument</span> <span class="o">=</span> <span class="n">lisainstrument</span><span class="o">.</span><span class="n">Instrument</span><span class="p">(</span>
-    <span class="n">orbits</span><span class="o">=</span><span class="n">orbits_fn</span><span class="p">,</span>
-    <span class="n">size</span><span class="o">=</span><span class="n">datasize</span><span class="p">,</span>
-    <span class="n">gws</span><span class="o">=</span><span class="n">sgwb_powerlaw_fn</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">data_kwgs</span><span class="p">,</span>
+    <span class="n">gws</span><span class="o">=</span><span class="n">gw_fname</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="n">instrument</span><span class="o">.</span><span class="n">simulate</span><span class="p">()</span>
 <span class="n">instrument</span><span class="o">.</span><span class="n">plot_offsets</span><span class="p">()</span>
@@ -542,15 +749,119 @@ You are using an orbit file in a version that might not be fully supported
 <span class="n">instrument</span><span class="o">.</span><span class="n">plot_totals</span><span class="p">()</span>
 <span class="n">instrument</span><span class="o">.</span><span class="n">plot_mprs</span><span class="p">()</span>
 <span class="n">instrument</span><span class="o">.</span><span class="n">plot_dws</span><span class="p">()</span>
+
+<span class="n">instrument_fn</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">OUTDIR</span><span class="si">}</span><span class="s2">/instrument.hdf5&quot;</span>
+<span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">instrument_fn</span><span class="p">):</span>
+    <span class="n">os</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">instrument_fn</span><span class="p">)</span>  <span class="c1"># remove old file</span>
+<span class="n">instrument</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">instrument_fn</span><span class="p">)</span>
 </pre></div>
 </div>
 </div>
 <div class="cell_output docutils container">
-<img alt="../_images/57c34977c8116c6298a0caa997ed25b66bcf14a73b723944642cbe92c82b31d0.png" src="../_images/57c34977c8116c6298a0caa997ed25b66bcf14a73b723944642cbe92c82b31d0.png" />
-<img alt="../_images/3a3138bec68b21998407fb7a494e29e58e7a166891c4b361fda89b573b93725a.png" src="../_images/3a3138bec68b21998407fb7a494e29e58e7a166891c4b361fda89b573b93725a.png" />
-<img alt="../_images/8a23e8fd54ee48c58bc44f2b3288d38d246d0ba2204116d00da95f63193c1b5e.png" src="../_images/8a23e8fd54ee48c58bc44f2b3288d38d246d0ba2204116d00da95f63193c1b5e.png" />
-<img alt="../_images/706385b4243620479343d739f33a968cf3e134ea873c3a52f20cfbe063e408b6.png" src="../_images/706385b4243620479343d739f33a968cf3e134ea873c3a52f20cfbe063e408b6.png" />
-<img alt="../_images/0f89b2287bb56d4e6ab114b30d9f34c13281371cdb6caa2f76118af2846810d0.png" src="../_images/0f89b2287bb56d4e6ab114b30d9f34c13281371cdb6caa2f76118af2846810d0.png" />
+<div class="output text_html"><pre></pre></div><img alt="../_images/051beea925cc9037e142d7d635f09d5e80b4d0df220da6a4bc305c2a36110c8b.png" src="../_images/051beea925cc9037e142d7d635f09d5e80b4d0df220da6a4bc305c2a36110c8b.png" />
+<img alt="../_images/0de32f380b8a8c0a628a9914491d555fc949c8407ce56fb2bfbe49ba591d8c80.png" src="../_images/0de32f380b8a8c0a628a9914491d555fc949c8407ce56fb2bfbe49ba591d8c80.png" />
+<img alt="../_images/c0408f5a9766840971d9474b26f7afd68013eae68633277159cd2603e99046e6.png" src="../_images/c0408f5a9766840971d9474b26f7afd68013eae68633277159cd2603e99046e6.png" />
+<img alt="../_images/55a0130a01cefd1722a69b4adc198465d56aa7342e66badb28097a221e63067a.png" src="../_images/55a0130a01cefd1722a69b4adc198465d56aa7342e66badb28097a221e63067a.png" />
+<img alt="../_images/2bf78687d9b7534f74e67d17cfd9e2d6f4b2d0f0077eb553e085c767d5308010.png" src="../_images/2bf78687d9b7534f74e67d17cfd9e2d6f4b2d0f0077eb553e085c767d5308010.png" />
+</div>
+</div>
+</section>
+<section id="tdi-observables">
+<h2>TDI observables<a class="headerlink" href="#tdi-observables" title="Permalink to this heading">#</a></h2>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython2 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">pytdi.michelson</span> <span class="kn">import</span> <span class="n">X1</span>
+<span class="kn">from</span> <span class="nn">pytdi</span> <span class="kn">import</span> <span class="n">Data</span>
+
+<span class="n">data</span> <span class="o">=</span> <span class="n">Data</span><span class="o">.</span><span class="n">from_instrument</span><span class="p">(</span><span class="n">instrument_fn</span><span class="p">)</span>
+<span class="n">built</span> <span class="o">=</span> <span class="n">X1</span><span class="o">.</span><span class="n">build</span><span class="p">(</span><span class="o">**</span><span class="n">data</span><span class="o">.</span><span class="n">args</span><span class="p">)</span>
+<span class="n">X_sim</span> <span class="o">=</span> <span class="n">built</span><span class="p">(</span><span class="n">data</span><span class="o">.</span><span class="n">measurements</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_html"><pre></pre></div></div>
+</div>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython2 notranslate"><div class="highlight"><pre><span></span><span class="n">simulation_time</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">duration</span><span class="p">,</span> <span class="n">dt</span><span class="p">)</span> <span class="o">+</span> <span class="n">t0</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">simulation_time</span><span class="o">/</span><span class="n">SEC_IN_HOUR</span><span class="p">,</span> <span class="n">X_sim</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s1">&#39;$X_1$&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">ylabel</span><span class="p">(</span><span class="s1">&#39;Strain&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s1">&#39;Time [hr]&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">legend</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_html"><pre></pre></div><div class="output text_plain highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>&lt;matplotlib.legend.Legend at 0x13c9f2ca0&gt;
+</pre></div>
+</div>
+<img alt="../_images/b6584a304deccefd625cba1b0ae62c9e265d12768d1012322b18ee2c1f406cac.png" src="../_images/b6584a304deccefd625cba1b0ae62c9e265d12768d1012322b18ee2c1f406cac.png" />
+</div>
+</div>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython2 notranslate"><div class="highlight"><pre><span></span><span class="c1"># Plot the TDI Michelson channels</span>
+<span class="kn">import</span> <span class="nn">scipy</span>
+
+<span class="n">psd</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">tseries</span><span class="p">:</span> <span class="n">scipy</span><span class="o">.</span><span class="n">signal</span><span class="o">.</span><span class="n">welch</span><span class="p">(</span>
+    <span class="n">tseries</span><span class="p">,</span>
+    <span class="n">fs</span><span class="o">=</span><span class="n">fs</span><span class="p">,</span>
+    <span class="n">nperseg</span><span class="o">=</span><span class="mi">2</span><span class="o">**</span><span class="mi">16</span><span class="p">,</span>
+    <span class="n">window</span><span class="o">=</span><span class="p">(</span><span class="s1">&#39;kaiser&#39;</span><span class="p">,</span> <span class="mi">30</span><span class="p">),</span>
+    <span class="n">detrend</span><span class="o">=</span><span class="kc">None</span>
+<span class="p">)</span>
+<span class="n">freq</span><span class="p">,</span> <span class="n">X_psd</span> <span class="o">=</span> <span class="n">psd</span><span class="p">(</span><span class="n">X_sim</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">loglog</span><span class="p">(</span><span class="n">freq</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">X_psd</span><span class="p">),</span> <span class="n">label</span><span class="o">=</span><span class="sa">r</span><span class="s1">&#39;TDI $X_1$&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">xlim</span><span class="p">(</span><span class="nb">min</span><span class="p">(</span><span class="n">freq</span><span class="p">),</span> <span class="mf">1E-1</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s1">&#39;Frequency [Hz]&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">ylabel</span><span class="p">(</span><span class="s1">&#39;ASD [Hz$^{-1/2}$]&#39;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">legend</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_html"><pre></pre></div><div class="output stderr highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>/Users/avaj0001/Documents/projects/compas_dev/compas_venv/lib/python3.9/site-packages/scipy/signal/_spectral_py.py:1999: UserWarning: nperseg = 65536 is greater than input length  = 7200, using nperseg = 7200
+  warnings.warn(&#39;nperseg = {0:d} is greater than input length &#39;
+/var/folders/qt/rxjvm_j566v9qn7g754s1v9hzb3p7f/T/ipykernel_84121/1801949632.py:13: UserWarning: Attempt to set non-positive xlim on a log-scaled axis will be ignored.
+  plt.xlim(min(freq), 1E-1)
+</pre></div>
+</div>
+<div class="output text_plain highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>&lt;matplotlib.legend.Legend at 0x13c983670&gt;
+</pre></div>
+</div>
+<img alt="../_images/67769531bbc6db945a363a784d6861e97c3b455aeacbf7cc3205d155d37f90d7.png" src="../_images/67769531bbc6db945a363a784d6861e97c3b455aeacbf7cc3205d155d37f90d7.png" />
+</div>
+</div>
+<div class="cell docutils container">
+<div class="cell_input docutils container">
+<div class="highlight-ipython2 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">legwork.visualisation</span> <span class="k">as</span> <span class="nn">vis</span>
+<span class="kn">import</span> <span class="nn">astropy.units</span> <span class="k">as</span> <span class="nn">u</span>
+
+
+
+<span class="n">sensitivity_color</span>  <span class="o">=</span> <span class="s2">&quot;tab:orange&quot;</span>
+<span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">vis</span><span class="o">.</span><span class="n">plot_sensitivity_curve</span><span class="p">(</span>
+    <span class="n">t_obs</span><span class="o">=</span><span class="mi">4</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">yr</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="s1">&#39;tab:gray&#39;</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="sa">r</span><span class="s2">&quot;$T_{\rm obs} = 4 \,\rm</span><span class="si">{yr}</span><span class="s2">$&quot;</span><span class="p">,</span>
+    <span class="n">fill</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">show</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">linewidth</span><span class="o">=</span><span class="mf">0.5</span>
+<span class="p">)</span>
+<span class="n">fig</span><span class="p">,</span> <span class="n">ax</span> <span class="o">=</span> <span class="n">vis</span><span class="o">.</span><span class="n">plot_sensitivity_curve</span><span class="p">(</span>
+    <span class="n">t_obs</span><span class="o">=</span><span class="mf">0.5</span> <span class="o">*</span> <span class="n">u</span><span class="o">.</span><span class="n">day</span><span class="p">,</span> <span class="n">color</span><span class="o">=</span><span class="n">sensitivity_color</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="sa">r</span><span class="s2">&quot;$T_{\rm obs} = 0.5 \,\rm</span><span class="si">{day}</span><span class="s2">$&quot;</span><span class="p">,</span>
+    <span class="n">fill</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">show</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">fig</span><span class="o">=</span><span class="n">fig</span><span class="p">,</span> <span class="n">ax</span><span class="o">=</span><span class="n">ax</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="c1">#FIXME: why are the amplitudes so different?</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">loglog</span><span class="p">(</span><span class="n">freq</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">X_psd</span><span class="p">),</span> <span class="n">label</span><span class="o">=</span><span class="sa">r</span><span class="s1">&#39;TDI $X_2$&#39;</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">loc</span><span class="o">=</span><span class="s1">&#39;upper right&#39;</span><span class="p">,</span> <span class="n">frameon</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="n">ax</span><span class="o">.</span><span class="n">set_ylim</span><span class="p">(</span><span class="mf">5e-21</span><span class="p">,</span> <span class="mf">1e-13</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="cell_output docutils container">
+<div class="output text_html"><pre></pre></div><div class="output text_plain highlight-myst-ansi notranslate"><div class="highlight"><pre><span></span>(5e-21, 1e-13)
+</pre></div>
+</div>
+<img alt="../_images/3878496b1973e54bac25f03e96410d6685732c4613985f9a2569be4ef3172342.png" src="../_images/3878496b1973e54bac25f03e96410d6685732c4613985f9a2569be4ef3172342.png" />
 </div>
 </div>
 </section>
@@ -623,9 +934,12 @@ You are using an orbit file in a version that might not be fully supported
   </div>
   <nav class="bd-toc-nav page-toc">
     <ul class="visible nav section-nav flex-column">
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#acknowledgements">Acknowledgements</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#installation-and-setup">Installation and setup</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#lisa-orbit-generation">LISA Orbit generation</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#gw-response">GW Response</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#lisa-instrument-noise">LISA Instrument noise</a></li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#tdi-observables">TDI observables</a></li>
 </ul>
   </nav></div>
 
